@@ -19,11 +19,18 @@ const (
 	appEngineContextKey contextKey = iota
 )
 
-func WithAppEngineContext(ctx context.Context, aectx appengine.Context) context.Context {
+func WithContext(ctx context.Context, aectx appengine.Context) context.Context {
 	return context.WithValue(ctx, appEngineContextKey, aectx)
 }
 
-func AppEngineContext(ctx context.Context) (appengine.Context, bool) {
+func Context(ctx context.Context) (appengine.Context, bool) {
 	aectx, ok := ctx.Value(appEngineContextKey).(appengine.Context)
 	return aectx, ok
+}
+
+func AppID(ctx context.Context) string {
+	if aectx, ok := Context(ctx); ok {
+		return appengine.AppID(aectx)
+	}
+	return ""
 }

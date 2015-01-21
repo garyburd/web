@@ -17,7 +17,7 @@ import (
 // and records the text as a log message at Debug level. The message will be associated
 // with the request linked with the provided context.
 func Debugf(ctx context.Context, format string, args ...interface{}) {
-	if aectx, ok := aeutil.AppEngineContext(ctx); ok {
+	if aectx, ok := aeutil.Context(ctx); ok {
 		aectx.Debugf(format, args...)
 		return
 	}
@@ -26,7 +26,7 @@ func Debugf(ctx context.Context, format string, args ...interface{}) {
 
 // Infof is like Debugf, but at Info level.
 func Infof(ctx context.Context, format string, args ...interface{}) {
-	if aectx, ok := aeutil.AppEngineContext(ctx); ok {
+	if aectx, ok := aeutil.Context(ctx); ok {
 		aectx.Infof(format, args...)
 		return
 	}
@@ -35,7 +35,7 @@ func Infof(ctx context.Context, format string, args ...interface{}) {
 
 // Warningf is like Debugf, but at Warning level.
 func Warningf(ctx context.Context, format string, args ...interface{}) {
-	if aectx, ok := aeutil.AppEngineContext(ctx); ok {
+	if aectx, ok := aeutil.Context(ctx); ok {
 		aectx.Warningf(format, args...)
 		return
 	}
@@ -44,7 +44,7 @@ func Warningf(ctx context.Context, format string, args ...interface{}) {
 
 // Errorf is like Debugf, but at Error level.
 func Errorf(ctx context.Context, format string, args ...interface{}) {
-	if aectx, ok := aeutil.AppEngineContext(ctx); ok {
+	if aectx, ok := aeutil.Context(ctx); ok {
 		aectx.Errorf(format, args...)
 		return
 	}
@@ -53,7 +53,7 @@ func Errorf(ctx context.Context, format string, args ...interface{}) {
 
 // Criticalf is like Debugf, but at Critical level.
 func Criticalf(ctx context.Context, format string, args ...interface{}) {
-	if aectx, ok := aeutil.AppEngineContext(ctx); ok {
+	if aectx, ok := aeutil.Context(ctx); ok {
 		aectx.Criticalf(format, args...)
 		return
 	}
