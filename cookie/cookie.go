@@ -67,8 +67,10 @@ type Codec struct {
 	re       *regexp.Regexp
 }
 
+type Option struct{ f func(*Codec) }
+
 // NewCodec creates a new codec with the given options.
-func NewCodec(name string, options ...func(*Codec)) *Codec {
+func NewCodec(name string, options ...Option) *Codec {
 	if !isValidCookieName(name) {
 		panic(name + " is not a valid cookie name")
 	}
@@ -82,7 +84,7 @@ func NewCodec(name string, options ...func(*Codec)) *Codec {
 		re:       regexp.MustCompile(`(?:; |^)` + regexp.QuoteMeta(name) + `="?([^ ",;\\]+)`),
 	}
 	for _, option := range options {
-		option(cc)
+		option.f(cc)
 	}
 	return cc
 }
@@ -314,37 +316,39 @@ func gobDecode(buf []byte, value interface{}) error {
 // Path sets the cookie path attribute. The path must either be "" or start
 // with a '/'.  The default value for path is "/". If the path is "", then the
 // path attribute is not included in the header value.
-func Path(path string) func(*Codec) { return func(cc *Codec) { cc.path = path } }
+func Path(path string) Option { return Option{func(cc *Codec) { cc.path = path }} }
 
 // Domain sets the cookie domain attribute. If the host is "", then the domain
 // attribute is not included in the header value.
-func Domain(domain string) func(*Codec) { return func(cc *Codec) { cc.domain = domain } }
+func Domain(domain string) Option { return Option{func(cc *Codec) { cc.domain = domain }} }
 
 // MaxAge specifies the maximum age for a cookie. If the maximum age is 0, then
 // the expiration time is not included in the header value and the browser will
 // handle the cookie as a "session" cookie. To support Internet Explorer, the
 // maximum age is also rendered as an absolute expiration time.
-func MaxAge(maxAge time.Duration) func(*Codec) { return func(cc *Codec) { cc.maxAge = maxAge } }
+func MaxAge(maxAge time.Duration) Option { return Option{func(cc *Codec) { cc.maxAge = maxAge }} }
 
 // Secure sets the secure attribute.
-func Secure(secure bool) func(*Codec) { return func(cc *Codec) { cc.secure = secure } }
+func Secure(secure bool) Option { return Option{func(cc *Codec) { cc.secure = secure }} }
 
 // HTTPOnly sets the httponly attribute. The default value for the httponly attribute is true.
-func HTTPOnly(httpOnly bool) func(*Codec) { return func(cc *Codec) { cc.httpOnly = httpOnly } }
+func HTTPOnly(httpOnly bool) Option { return Option{func(cc *Codec) { cc.httpOnly = httpOnly }} }
 
 // HashFunc sets the hash algorithm used to create HMAC. The default value for
 // the hash algorithm is crypto/sha1.New.
-func HashFunc(f func() hash.Hash) func(*Codec) { return func(cc *Codec) { cc.hashFunc = f } }
+func HashFunc(f func() hash.Hash) Option { return Option{func(cc *Codec) { cc.hashFunc = f }} }
 
 // HMACKeys specifies the keys for signing cookies. Multiple keys are allowed
 // to support key rotation. Cookies are signed with the first key. If keys is
 // nil, then the cookie is not signed.
-func HMACKeys(keys [][]byte) func(*Codec) { return func(cc *Codec) { cc.hmacKeys = keys } }
+func HMACKeys(keys [][]byte) Option { return Option{func(cc *Codec) { cc.hmacKeys = keys }} }
 
 // EncodeBase64 specifies that string and []byte cookie values should be base64 encoded.
-func EncodeBase64() func(*Codec) {
-	return func(cc *Codec) { cc.encode = base64Encode; cc.decode = base64Decode }
+func EncodeBase64() Option {
+	return Option{func(cc *Codec) { cc.encode = base64Encode; cc.decode = base64Decode }}
 }
 
 // EncodeGob specifies that cookie values should be gob and base64 encoded.
-func EncodeGob() func(*Codec) { return func(cc *Codec) { cc.encode = gobEncode; cc.decode = gobDecode } }
+func EncodeGob() Option {
+	return Option{func(cc *Codec) { cc.encode = gobEncode; cc.decode = gobDecode }}
+}
