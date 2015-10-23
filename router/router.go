@@ -127,7 +127,7 @@ func compilePattern(pat string, addSlash bool, sep string) *regexp.Regexp {
 // Add adds a new route for the specified pattern.
 func (router *Router) Add(pat string) *Route {
 	if pat == "" || pat[0] != '/' {
-		panic("tango: invalid route pattern " + pat)
+		panic("router: invalid route pattern " + pat)
 	}
 	addSlash := pat != "/" && pat[len(pat)-1] == '/'
 	route := &Route{
@@ -140,7 +140,7 @@ func (router *Router) Add(pat string) *Route {
 		router.routes = append(router.routes, route)
 	} else {
 		if foundRoute, _, _ := router.findRoute(pat); foundRoute != nil {
-			panic("tango: pattern " + pat + " matches route " + foundRoute.pat)
+			panic("router: pattern " + pat + " matches route " + foundRoute.pat)
 		}
 		router.simpleMatch[pat] = route
 		if addSlash {
@@ -391,7 +391,7 @@ func (router *HostRouter) Add(pat string, handler Handler) {
 		router.routes = append(router.routes, route)
 	} else {
 		if foundRoute, _, _ := router.findRoute(pat); foundRoute != nil {
-			panic("tango: pattern " + pat + " matches route " + foundRoute.pat)
+			panic("router: pattern " + pat + " matches route " + foundRoute.pat)
 		}
 		router.simpleMatch[pat] = route
 	}

@@ -44,75 +44,75 @@ var cookieEncodeDecodeTests = []struct {
 		"path=/; HttpOnly",
 	},
 	{
-		NewCodec("path", Path("/world"), HTTPOnly(false)),
+		NewCodec("path", WithPath("/world"), WithHTTPOnly(false)),
 		"hello",
 		"path=/world",
 	},
 	{
-		NewCodec("domain", Path(""), HTTPOnly(false), Domain("example.com")),
+		NewCodec("domain", WithPath(""), WithHTTPOnly(false), WithDomain("example.com")),
 		"hello",
 		"domain=example.com",
 	},
 	{
-		NewCodec("secure", Path(""), HTTPOnly(false), Secure(true)),
+		NewCodec("secure", WithPath(""), WithHTTPOnly(false), WithSecure(true)),
 		"hello",
 		"secure",
 	},
 	{
-		NewCodec("maxage", Path(""), HTTPOnly(false), MaxAge(time.Second)),
+		NewCodec("maxage", WithPath(""), WithHTTPOnly(false), WithMaxAge(time.Second)),
 		"hello",
 		"max-age=1; expires=Mon, 02 Jan 2006 15:04:06 GMT",
 	},
 	{
-		NewCodec("expired", Path(""), HTTPOnly(false), MaxAge(time.Second)),
+		NewCodec("expired", WithPath(""), WithHTTPOnly(false), WithMaxAge(time.Second)),
 		nil,
 		"max-age=-2592000; expires=Sat, 03 Dec 2005 15:04:05 GMT",
 	},
 
 	// Raw: string, []byte
 	{
-		NewCodec("rawstring", Path(""), HTTPOnly(false)),
+		NewCodec("rawstring", WithPath(""), WithHTTPOnly(false)),
 		"hello",
 		"",
 	},
 	{
-		NewCodec("rawbytes", Path(""), HTTPOnly(false)),
+		NewCodec("rawbytes", WithPath(""), WithHTTPOnly(false)),
 		[]byte("hello"),
 		"",
 	},
 
 	// Base64: string, []byte
 	{
-		NewCodec("64string", Path(""), HTTPOnly(false)),
+		NewCodec("64string", WithPath(""), WithHTTPOnly(false)),
 		"hello",
 		"",
 	},
 	{
-		NewCodec("64bytes", Path(""), HTTPOnly(false)),
+		NewCodec("64bytes", WithPath(""), WithHTTPOnly(false)),
 		[]byte("hello"),
 		"",
 	},
 
 	// Gob
 	{
-		NewCodec("gobstring", Path(""), HTTPOnly(false), EncodeGob()),
+		NewCodec("gobstring", WithPath(""), WithHTTPOnly(false), WithEncodeGob()),
 		"hello",
 		"",
 	},
 	{
-		NewCodec("gobstruct", Path(""), HTTPOnly(false), EncodeGob()),
+		NewCodec("gobstruct", WithPath(""), WithHTTPOnly(false), WithEncodeGob()),
 		&struct{ Hello string }{"world"},
 		"",
 	},
 
 	// HMAC
 	{
-		NewCodec("hmac", Path(""), HTTPOnly(false), HMACKeys([][]byte{[]byte("key1"), []byte("key2")})),
+		NewCodec("hmac", WithPath(""), WithHTTPOnly(false), WithHMACKeys([][]byte{[]byte("key1"), []byte("key2")})),
 		"hello",
 		"",
 	},
 	{
-		NewCodec("hmacMaxAge", Path(""), HTTPOnly(false), HMACKeys([][]byte{[]byte("key1"), []byte("key2")}), MaxAge(time.Second)),
+		NewCodec("hmacMaxAge", WithPath(""), WithHTTPOnly(false), WithHMACKeys([][]byte{[]byte("key1"), []byte("key2")}), WithMaxAge(time.Second)),
 		"hello",
 		"max-age=1; expires=Mon, 02 Jan 2006 15:04:06 GMT",
 	},

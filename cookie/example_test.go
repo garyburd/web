@@ -13,7 +13,7 @@ import (
 
 func ExampleCodec(w http.ResponseWriter, r *http.Request) {
 	// Declare instance of codec at package level.
-	var exampleCodec = cookie.NewCodec("example", cookie.Secure(true))
+	var exampleCodec = cookie.NewCodec("example", cookie.WithSecure(true))
 
 	// Get the value of a cookie in a request handler.
 	var example string
