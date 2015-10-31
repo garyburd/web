@@ -7,16 +7,16 @@
 package cookie // import "github.com/garyburd/web/cookie"
 
 import (
-	"bytes"
 	"crypto/hmac"
 	"crypto/sha1"
-	"encoding/base64"
-	"encoding/gob"
 	"encoding/hex"
 	"errors"
+	"fmt"
 	"hash"
 	"io"
 	"net/http"
+	"net/url"
+	"reflect"
 	"regexp"
 	"strconv"
 	"strings"
@@ -25,20 +25,6 @@ import (
 
 // now is a hook for tests.
 var now = time.Now
-
-func isValidCookieValue(p []byte) bool {
-	for _, b := range p {
-		if b <= ' ' ||
-			b >= 127 ||
-			b == '"' ||
-			b == ',' ||
-			b == ';' ||
-			b == '\\' {
-			return false
-		}
-	}
-	return true
-}
 
 func isValidCookieName(s string) bool {
 	for _, r := range s {
@@ -62,8 +48,6 @@ type Codec struct {
 	httpOnly bool
 	hashFunc func() hash.Hash
 	hmacKeys [][]byte
-	encode   func([]byte, interface{}) ([]byte, error)
-	decode   func([]byte, interface{}) error
 	re       *regexp.Regexp
 }
 
@@ -78,8 +62,6 @@ func NewCodec(name string, options ...Option) *Codec {
 		name:     name,
 		path:     "/",
 		httpOnly: true,
-		encode:   rawEncode,
-		decode:   rawDecode,
 		hashFunc: sha1.New,
 		re:       regexp.MustCompile(`(?:; |^)` + regexp.QuoteMeta(name) + `="?([^ ",;\\]+)`),
 	}
@@ -100,55 +82,52 @@ func (cc *Codec) sign(i int, tv []byte) []byte {
 	return buf
 }
 
-func (cc *Codec) validate(tv []byte, h []byte) bool {
+func (cc *Codec) validate(v string, h string) bool {
+	bv := []byte(v)
+	bh := []byte(h)
 	for i := range cc.hmacKeys {
-		if hmac.Equal(cc.sign(i, tv), h) {
+		if hmac.Equal(cc.sign(i, bv), bh) {
 			return true
 		}
 	}
 	return false
 }
 
-// Decode decodes a cookie value from a request. The value argument must be a
-// pointer to a type supported by the codec.
-func (cc *Codec) Decode(r *http.Request, value interface{}) error {
-	sv := ""
+// Decode decodes a cookie value from a request.
+func (cc *Codec) Decode(r *http.Request, values ...interface{}) error {
+	s := ""
 	for _, h := range r.Header["Cookie"] {
 		if m := cc.re.FindStringSubmatch(h); m != nil {
-			sv = m[1]
+			s = m[1]
 			break
 		}
 	}
-	if sv == "" {
+	if s == "" {
 		return errors.New("cookie: cookie not found")
 	}
 
-	bv := []byte(sv)
-
 	if cc.hmacKeys != nil {
+		var p string
 
 		// Check HMAC
 
-		i := bytes.IndexByte(bv, '|')
-		if i < 0 {
+		p, s = split(s)
+		if p == "" {
 			return errors.New("cookie: bad value format")
 		}
 
-		h := bv[:i]
-		bv = bv[i+1:]
-
-		if !cc.validate(bv, h) {
+		if !cc.validate(s, p) {
 			return errors.New("cookie: bad HMAC")
 		}
 
 		// Check expiration
 
-		i = bytes.IndexByte(bv, '|')
-		if i < 0 {
+		p, s = split(s)
+		if p == "" {
 			return errors.New("cookie: bad value format")
 		}
 
-		t, err := strconv.ParseInt(string(bv[:i]), 36, 64)
+		t, err := strconv.ParseInt(p, 36, 64)
 		if err != nil {
 			return errors.New("cookie: bad time format")
 		}
@@ -156,17 +135,14 @@ func (cc *Codec) Decode(r *http.Request, value interface{}) error {
 		if cc.maxAge != 0 && time.Unix(t, 0).Add(cc.maxAge+time.Second).Before(now()) {
 			return errors.New("cookie: expired")
 		}
-
-		bv = bv[i+1:]
 	}
 
-	return cc.decode(bv, value)
+	return decodeValues(s, values)
 }
 
 // Encode encodes value to a set cookie header. If value is nil, then the
-// set cookie header is set to expire in the past.  The value must be a type
-// supported by the codec.
-func (cc *Codec) Encode(w http.ResponseWriter, value interface{}) error {
+// set cookie header is set to expire in the past.
+func (cc *Codec) Encode(w http.ResponseWriter, values ...interface{}) error {
 
 	var buf []byte
 
@@ -174,11 +150,11 @@ func (cc *Codec) Encode(w http.ResponseWriter, value interface{}) error {
 	buf = append(buf, '=')
 
 	switch {
-	case value == nil:
+	case len(values) == 0:
 		buf = append(buf, '.')
 	case cc.hmacKeys == nil:
 		var err error
-		buf, err = cc.encode(buf, value)
+		buf, err = encodeValues(buf, values)
 		if err != nil {
 			return err
 		}
@@ -186,7 +162,7 @@ func (cc *Codec) Encode(w http.ResponseWriter, value interface{}) error {
 		tv := strconv.AppendInt(nil, now().Unix(), 36)
 		tv = append(tv, '|')
 		var err error
-		tv, err = cc.encode(tv, value)
+		tv, err = encodeValues(tv, values)
 		if err != nil {
 			return err
 		}
@@ -206,7 +182,7 @@ func (cc *Codec) Encode(w http.ResponseWriter, value interface{}) error {
 	}
 
 	maxAge := cc.maxAge
-	if value == nil {
+	if len(values) == 0 {
 		// A time in the past deletes the cookie.
 		maxAge = -30 * 24 * time.Hour
 	}
@@ -231,86 +207,84 @@ func (cc *Codec) Encode(w http.ResponseWriter, value interface{}) error {
 
 var errTypeNotSupported = errors.New("cookie: codec does not support value type")
 
-func rawEncode(buf []byte, value interface{}) ([]byte, error) {
-	i := len(buf)
-	switch value := value.(type) {
-	case string:
-		buf = append(buf, value...)
-	case []byte:
-		buf = append(buf, value...)
-	default:
-		return nil, errTypeNotSupported
+// encodeBytes percent encodes bytes not allowed in cookie values, '+', '%' and '|'.
+func encodeBytes(buf []byte, s string) []byte {
+	for i := 0; i < len(s); i++ {
+		b := s[i]
+		switch {
+		case b == ' ':
+			buf = append(buf, '+')
+		case // byte values not allowed in cookie value
+			b <= ' ' ||
+				b >= 127 ||
+				b == '"' ||
+				b == ',' ||
+				b == ';' ||
+				b == '\\' ||
+				// byte values with special meaning in percent encoding
+				b == '+' ||
+				b == '%' ||
+				// value deliminter
+				b == '|':
+			buf = append(buf, '%', "0123456789ABCDEF"[b>>4], "0123456789ABCDEF"[b&15])
+		default:
+			buf = append(buf, b)
+		}
 	}
-	if !isValidCookieValue(buf[i:]) {
-		return nil, errors.New("invalid cookie value")
+	return buf
+}
+
+func split(s string) (string, string) {
+	if i := strings.IndexByte(s, '|'); i >= 0 {
+		return s[:i], s[i+1:]
+	}
+	return s, ""
+}
+
+func encodeValues(buf []byte, values []interface{}) ([]byte, error) {
+	for i, v := range values {
+		if i != 0 {
+			buf = append(buf, '|')
+		}
+		switch v := v.(type) {
+		case nil:
+			// do nothing
+		case string:
+			buf = encodeBytes(buf, v)
+		case int:
+			buf = strconv.AppendInt(buf, int64(v), 36)
+		default:
+			return nil, fmt.Errorf("cookie: value type %s not supported", reflect.TypeOf(v))
+		}
 	}
 	return buf, nil
 }
 
-func rawDecode(buf []byte, value interface{}) error {
-	switch value := value.(type) {
-	case *string:
-		*value = string(buf)
-	case *[]byte:
-		*value = buf
-	default:
-		return errTypeNotSupported
+func decodeValues(s string, values []interface{}) error {
+	for len(s) > 0 && len(values) > 0 {
+		var p string
+		p, s = split(s)
+		switch v := values[0].(type) {
+		case nil:
+			// do nothing
+		case *string:
+			var err error
+			*v, err = url.QueryUnescape(p)
+			if err != nil {
+				return err
+			}
+		case *int:
+			i64, err := strconv.ParseInt(p, 36, 0)
+			if err != nil {
+				return err
+			}
+			*v = int(i64)
+		default:
+			return fmt.Errorf("cookie: value type %s not supported", reflect.TypeOf(v))
+		}
+		values = values[1:]
 	}
 	return nil
-}
-
-func base64Encode(buf []byte, value interface{}) ([]byte, error) {
-	var unencoded []byte
-	switch value := value.(type) {
-	case string:
-		unencoded = []byte(value)
-	case []byte:
-		unencoded = value
-	default:
-		return nil, errTypeNotSupported
-	}
-
-	encoded := make([]byte, base64.StdEncoding.EncodedLen(len(unencoded)))
-	base64.StdEncoding.Encode(encoded, unencoded)
-	return append(buf, encoded...), nil
-}
-
-func base64Decode(buf []byte, value interface{}) error {
-	decoded := make([]byte, base64.StdEncoding.DecodedLen(len(buf)))
-	n, err := base64.StdEncoding.Decode(decoded, buf)
-	if err != nil {
-		return err
-	}
-	decoded = decoded[:n]
-
-	switch value := value.(type) {
-	case *string:
-		*value = string(decoded)
-	case *[]byte:
-		*value = decoded
-	default:
-		return errTypeNotSupported
-	}
-	return nil
-}
-
-type sliceWriter struct{ buf []byte }
-
-func (w *sliceWriter) Write(p []byte) (int, error) {
-	w.buf = append(w.buf, p...)
-	return len(p), nil
-}
-
-func gobEncode(buf []byte, value interface{}) ([]byte, error) {
-	sw := sliceWriter{buf}
-	bw := base64.NewEncoder(base64.StdEncoding, &sw)
-	err := gob.NewEncoder(bw).Encode(value)
-	bw.Close()
-	return sw.buf, err
-}
-
-func gobDecode(buf []byte, value interface{}) error {
-	return gob.NewDecoder(base64.NewDecoder(base64.StdEncoding, bytes.NewReader(buf))).Decode(value)
 }
 
 // WithPath sets the cookie path attribute. The path must either be "" or start
@@ -342,13 +316,3 @@ func WithHashFunc(f func() hash.Hash) Option { return Option{func(cc *Codec) { c
 // to support key rotation. Cookies are signed with the first key. If keys is
 // nil, then the cookie is not signed.
 func WithHMACKeys(keys [][]byte) Option { return Option{func(cc *Codec) { cc.hmacKeys = keys }} }
-
-// WithEncodeBase64 specifies that string and []byte cookie values should be base64 encoded.
-func WithEncodeBase64() Option {
-	return Option{func(cc *Codec) { cc.encode = base64Encode; cc.decode = base64Decode }}
-}
-
-// WithEncodeGob specifies that cookie values should be gob and base64 encoded.
-func WithEncodeGob() Option {
-	return Option{func(cc *Codec) { cc.encode = gobEncode; cc.decode = gobDecode }}
-}

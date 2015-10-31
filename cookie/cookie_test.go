@@ -8,10 +8,67 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"reflect"
-	"regexp"
+	"strings"
 	"testing"
 	"time"
 )
+
+var encodeDecodeValueTests = []struct {
+	values []interface{}
+}{
+	{
+		values: []interface{}{1},
+	},
+	{
+		values: []interface{}{1, nil, 100},
+	},
+	{
+		values: []interface{}{"hello"},
+	},
+	{
+		values: []interface{}{"hello,world|"},
+	},
+	{
+		values: []interface{}{"hello world"},
+	},
+	{
+		values: []interface{}{nil},
+	},
+}
+
+func TestEncodeDecodeValue(t *testing.T) {
+	for _, tt := range encodeDecodeValueTests {
+		p, err := encodeValues(nil, tt.values)
+		if err != nil {
+			t.Errorf("encodeValues(nil, %#v) returned error %v", tt.values, err)
+			continue
+		}
+		var pvalues []interface{}
+		for _, v := range tt.values {
+			var pv interface{}
+			if v != nil {
+				pv = reflect.New(reflect.TypeOf(v)).Interface()
+			}
+			pvalues = append(pvalues, pv)
+		}
+		err = decodeValues(string(p), pvalues)
+		if err != nil {
+			t.Errorf("decodeValues(%q, values) returned error %v", p, err)
+			continue
+		}
+		var values []interface{}
+		for _, pv := range pvalues {
+			var v interface{}
+			if pv != nil {
+				v = reflect.ValueOf(pv).Elem().Interface()
+			}
+			values = append(values, v)
+		}
+		if !reflect.DeepEqual(values, tt.values) {
+			t.Errorf("decodeValues(%q, ...) returned %#v, want %#v", p, values, tt.values)
+		}
+	}
+}
 
 var cookieParseTests = []string{
 	"foo=bar",
@@ -21,7 +78,7 @@ var cookieParseTests = []string{
 	`xxxfoo=bad; foo=bar; foo=bad`,
 }
 
-func TestCookieCodecParse(t *testing.T) {
+func TestCookieParse(t *testing.T) {
 	for _, tt := range cookieParseTests {
 		r := &http.Request{Header: http.Header{"Cookie": {tt}}}
 		fooCookie := NewCodec("foo")
@@ -34,87 +91,42 @@ func TestCookieCodecParse(t *testing.T) {
 }
 
 var cookieEncodeDecodeTests = []struct {
-	cc    *Codec
-	value interface{}
-	attr  string
+	cc       *Codec
+	h        string
+	novalues bool
 }{
 	{
-		NewCodec("default"),
-		"hello",
-		"path=/; HttpOnly",
+		cc: NewCodec("default"),
+		h:  "default=foo; path=/; HttpOnly",
 	},
 	{
-		NewCodec("path", WithPath("/world"), WithHTTPOnly(false)),
-		"hello",
-		"path=/world",
+		cc: NewCodec("path", WithPath("/world"), WithHTTPOnly(false)),
+		h:  "path=foo; path=/world",
 	},
 	{
-		NewCodec("domain", WithPath(""), WithHTTPOnly(false), WithDomain("example.com")),
-		"hello",
-		"domain=example.com",
+		cc: NewCodec("domain", WithPath(""), WithHTTPOnly(false), WithDomain("example.com")),
+		h:  "domain=foo; domain=example.com",
 	},
 	{
-		NewCodec("secure", WithPath(""), WithHTTPOnly(false), WithSecure(true)),
-		"hello",
-		"secure",
+		cc: NewCodec("secure", WithPath(""), WithHTTPOnly(false), WithSecure(true)),
+		h:  "secure=foo; secure",
 	},
 	{
-		NewCodec("maxage", WithPath(""), WithHTTPOnly(false), WithMaxAge(time.Second)),
-		"hello",
-		"max-age=1; expires=Mon, 02 Jan 2006 15:04:06 GMT",
+		cc: NewCodec("maxage", WithPath(""), WithHTTPOnly(false), WithMaxAge(time.Second)),
+		h:  "maxage=foo; max-age=1; expires=Mon, 02 Jan 2006 15:04:06 GMT",
 	},
 	{
-		NewCodec("expired", WithPath(""), WithHTTPOnly(false), WithMaxAge(time.Second)),
-		nil,
-		"max-age=-2592000; expires=Sat, 03 Dec 2005 15:04:05 GMT",
-	},
-
-	// Raw: string, []byte
-	{
-		NewCodec("rawstring", WithPath(""), WithHTTPOnly(false)),
-		"hello",
-		"",
+		cc:       NewCodec("expired", WithPath(""), WithHTTPOnly(false), WithMaxAge(time.Second)),
+		h:        "expired=.; max-age=-2592000; expires=Sat, 03 Dec 2005 15:04:05 GMT",
+		novalues: true,
 	},
 	{
-		NewCodec("rawbytes", WithPath(""), WithHTTPOnly(false)),
-		[]byte("hello"),
-		"",
-	},
-
-	// Base64: string, []byte
-	{
-		NewCodec("64string", WithPath(""), WithHTTPOnly(false)),
-		"hello",
-		"",
+		cc: NewCodec("hmac", WithPath(""), WithHTTPOnly(false), WithHMACKeys([][]byte{[]byte("key1"), []byte("key2")})),
+		h:  "hmac=b1d674f6bdcc43616c8460025d0f1c774b43e774|ish0it|foo",
 	},
 	{
-		NewCodec("64bytes", WithPath(""), WithHTTPOnly(false)),
-		[]byte("hello"),
-		"",
-	},
-
-	// Gob
-	{
-		NewCodec("gobstring", WithPath(""), WithHTTPOnly(false), WithEncodeGob()),
-		"hello",
-		"",
-	},
-	{
-		NewCodec("gobstruct", WithPath(""), WithHTTPOnly(false), WithEncodeGob()),
-		&struct{ Hello string }{"world"},
-		"",
-	},
-
-	// HMAC
-	{
-		NewCodec("hmac", WithPath(""), WithHTTPOnly(false), WithHMACKeys([][]byte{[]byte("key1"), []byte("key2")})),
-		"hello",
-		"",
-	},
-	{
-		NewCodec("hmacMaxAge", WithPath(""), WithHTTPOnly(false), WithHMACKeys([][]byte{[]byte("key1"), []byte("key2")}), WithMaxAge(time.Second)),
-		"hello",
-		"max-age=1; expires=Mon, 02 Jan 2006 15:04:06 GMT",
+		cc: NewCodec("hmacMaxAge", WithPath(""), WithHTTPOnly(false), WithHMACKeys([][]byte{[]byte("key1"), []byte("key2")}), WithMaxAge(time.Second)),
+		h:  "hmacMaxAge=49d5fc4c42969d0f8a6ad7a629034a7e8f7b1f63|ish0it|foo; max-age=1; expires=Mon, 02 Jan 2006 15:04:06 GMT",
 	},
 }
 
@@ -124,39 +136,32 @@ func TestCookieEncodeDecode(t *testing.T) {
 	defer func() { now = time.Now }()
 
 	for _, tt := range cookieEncodeDecodeTests {
-		s := `^` + tt.cc.name + `=([^ ;]+)`
-		if tt.attr != "" {
-			s += `; ` + tt.attr
-		}
-		s += `$`
-		re, err := regexp.Compile(s)
-		if err != nil {
-			t.Errorf("regexp.Compile(%s) returned error %v", s, err)
-			continue
-		}
-
 		w := httptest.NewRecorder()
-		tt.cc.Encode(w, tt.value)
+		var values []interface{}
+		if !tt.novalues {
+			values = []interface{}{"foo"}
+		}
+		tt.cc.Encode(w, values...)
 		h := w.HeaderMap.Get("Set-Cookie")
-
-		match := re.FindStringSubmatch(h)
-		if match == nil {
-			t.Errorf("%s: want %q, got %q", tt.cc.name, re.String(), h)
+		if h != tt.h {
+			t.Errorf("%s: got %q, want %q", tt.cc.name, h, tt.h)
 			continue
 		}
-		if tt.value == nil {
+		if tt.novalues {
 			continue
 		}
-
-		r := &http.Request{Header: http.Header{"Cookie": {tt.cc.name + "=" + match[1]}}}
-		v := reflect.New(reflect.TypeOf(tt.value))
-		err = tt.cc.Decode(r, v.Interface())
+		if i := strings.IndexByte(h, ';'); i >= 0 {
+			h = h[:i]
+		}
+		r := &http.Request{Header: http.Header{"Cookie": {h}}}
+		var s string
+		err := tt.cc.Decode(r, &s)
 		if err != nil {
-			t.Errorf("%s: Decode(%q) returned error %v", tt.cc.name, match[1], err)
+			t.Errorf("Decode %q returned error %v", h, err)
 			continue
 		}
-		if !reflect.DeepEqual(tt.value, v.Elem().Interface()) {
-			t.Errorf("%s: decode returned %v, want %v", tt.cc.name, v.Elem().Interface(), tt.value)
+		if s != "foo" {
+			t.Errorf("Decode %q returned %q, want 'foo'", h, s)
 		}
 	}
 }
