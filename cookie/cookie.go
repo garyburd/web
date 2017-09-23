@@ -205,6 +205,10 @@ func (cc *Codec) Encode(w http.ResponseWriter, values ...interface{}) error {
 	return nil
 }
 
+func (cc *Codec) SetHMACKeys(keys [][]byte) {
+	cc.hmacKeys = keys
+}
+
 var errTypeNotSupported = errors.New("cookie: codec does not support value type")
 
 // encodeBytes percent encodes bytes not allowed in cookie values, '+', '%' and '|'.
