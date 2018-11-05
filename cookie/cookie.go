@@ -4,6 +4,8 @@
 
 // Package cookie provides a codec for encoding and decoding values to HTTP
 // cookies.
+//
+// The codec supports values of type int, string and []string.
 package cookie // import "github.com/garyburd/web/cookie"
 
 import (
@@ -211,7 +213,8 @@ func (cc *Codec) SetHMACKeys(keys [][]byte) {
 
 var errTypeNotSupported = errors.New("cookie: codec does not support value type")
 
-// encodeBytes percent encodes bytes not allowed in cookie values, '+', '%' and '|'.
+// encodeBytes percent encodes bytes not allowed in cookie values, bytes used
+// in percent encodings and delimiters used in this package.
 func encodeBytes(buf []byte, s string) []byte {
 	for i := 0; i < len(s); i++ {
 		b := s[i]
@@ -229,7 +232,9 @@ func encodeBytes(buf []byte, s string) []byte {
 				b == '+' ||
 				b == '%' ||
 				// value deliminter
-				b == '|':
+				b == '|' ||
+				// string slice delimiter
+				b == '!':
 			buf = append(buf, '%', "0123456789ABCDEF"[b>>4], "0123456789ABCDEF"[b&15])
 		default:
 			buf = append(buf, b)
@@ -257,6 +262,13 @@ func encodeValues(buf []byte, values []interface{}) ([]byte, error) {
 			buf = encodeBytes(buf, v)
 		case int:
 			buf = strconv.AppendInt(buf, int64(v), 36)
+		case []string:
+			for j, v := range v {
+				if j != 0 {
+					buf = append(buf, '!')
+				}
+				buf = encodeBytes(buf, v)
+			}
 		default:
 			return nil, fmt.Errorf("cookie: value type %s not supported", reflect.TypeOf(v))
 		}
@@ -283,6 +295,14 @@ func decodeValues(s string, values []interface{}) error {
 				return err
 			}
 			*v = int(i64)
+		case *[]string:
+			for _, q := range strings.Split(p, "!") {
+				r, err := url.QueryUnescape(q)
+				if err != nil {
+					return err
+				}
+				*v = append(*v, r)
+			}
 		default:
 			return fmt.Errorf("cookie: value type %s not supported", reflect.TypeOf(v))
 		}
