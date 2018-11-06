@@ -56,87 +56,114 @@ func (t *Template) WriteResponse(w http.ResponseWriter, r *http.Request, statusC
 }
 
 type TemplateManager struct {
-	TextFuncs map[string]interface{}
-	HTMLFuncs map[string]interface{}
-	RootName  string // default is "ROOT"
-	templates []*Template
+	TextFuncs     map[string]interface{}
+	HTMLFuncs     map[string]interface{}
+	RootName      string // default is "ROOT"
+	htmlTemplates []*Template
+	textTemplates []*Template
 }
 
-func (m *TemplateManager) New(fileNames ...string) *Template {
+// NewHTML creates a new template with HTML escaping from the specified files.
+// Order the files from most specific to this template to most common. The
+// files in common suffixes across templates are parsed once. File names are
+// relative to the directory name passed to Load.
+func (m *TemplateManager) NewHTML(fileNames ...string) *Template {
 	t := &Template{fileNames: fileNames, contentType: mime.TypeByExtension(path.Ext(fileNames[0]))}
-	m.templates = append(m.templates, t)
+	m.htmlTemplates = append(m.htmlTemplates, t)
 	return t
 }
 
+// NewText creates a new template from the specified files. Order the files
+// from most specific to this template to most common. The files in common
+// suffixes across templates are parsed once. File names are relative to the
+// directory name passed to Load.
+func (m *TemplateManager) NewText(fileNames ...string) *Template {
+	t := &Template{fileNames: fileNames, contentType: mime.TypeByExtension(path.Ext(fileNames[0]))}
+	m.textTemplates = append(m.textTemplates, t)
+	return t
+}
+
+// Load loads the templates from the specified directory.
 func (m *TemplateManager) Load(dir string) error {
-	hbase := htemp.Must(htemp.New("_").Funcs(m.HTMLFuncs).Parse(`{{define "_"}}{{end}}`))
-	hcache := make(map[string]*htemp.Template)
-	tbase := ttemp.Must(ttemp.New("_").Funcs(m.TextFuncs).Parse(`{{define "_"}}{{end}}`))
-	tcache := make(map[string]*ttemp.Template)
-
-	root := m.RootName
-	if root == "" {
-		root = "ROOT"
+	if m.RootName == "" {
+		m.RootName = "ROOT"
 	}
+	if err := m.loadHTML(dir); err != nil {
+		return err
+	}
+	return m.loadText(dir)
+}
 
-	for _, template := range m.templates {
-		if strings.HasSuffix(template.fileNames[0], ".html") {
-			t := hbase
-			for i := len(template.fileNames) - 1; i >= 0; i-- {
-				key := strings.Join(template.fileNames[i:], "\n")
-				tt, ok := hcache[key]
-				if !ok {
-					name := filepath.Join(dir, filepath.FromSlash(template.fileNames[i]))
-					var err error
-					tt, err = t.Clone()
-					if err != nil {
-						return err
-					}
-					tt, err = tt.ParseFiles(name)
-					if err != nil {
-						return err
-					}
-					hcache[key] = tt
+func (m *TemplateManager) loadHTML(dir string) error {
+
+	base := htemp.Must(htemp.New("_").Funcs(m.HTMLFuncs).Parse(`{{define "_"}}{{end}}`))
+	cache := make(map[string]*htemp.Template)
+
+	for _, template := range m.htmlTemplates {
+		t := base
+		for i := len(template.fileNames) - 1; i >= 0; i-- {
+			key := strings.Join(template.fileNames[i:], "\n")
+			tt, ok := cache[key]
+			if !ok {
+				name := filepath.Join(dir, filepath.FromSlash(template.fileNames[i]))
+				var err error
+				tt, err = t.Clone()
+				if err != nil {
+					return err
 				}
-				t = tt
-			}
-			t = t.Lookup(root)
-			if t == nil {
-				return fmt.Errorf("Could not find %q in %v", root, template.fileNames)
-			}
-			template.execute = t.Execute
-			template.executeTemplate = t.ExecuteTemplate
-			lookup := t.Lookup
-			template.hasTemplate = func(name string) bool { return lookup(name) != nil }
-		} else {
-			t := tbase
-			for i := len(template.fileNames) - 1; i >= 0; i-- {
-				key := strings.Join(template.fileNames[i:], "\n")
-				tt, ok := tcache[key]
-				if !ok {
-					name := filepath.Join(dir, filepath.FromSlash(template.fileNames[i]))
-					var err error
-					tt, err = t.Clone()
-					if err != nil {
-						return err
-					}
-					tt, err = tt.ParseFiles(name)
-					if err != nil {
-						return err
-					}
-					tcache[key] = tt
+				tt, err = tt.ParseFiles(name)
+				if err != nil {
+					return err
 				}
-				t = tt
+				cache[key] = tt
 			}
-			t = t.Lookup(root)
-			if t == nil {
-				return fmt.Errorf("Could not find %q in %v", root, template.fileNames)
-			}
-			template.execute = t.Execute
-			template.executeTemplate = t.ExecuteTemplate
-			lookup := t.Lookup
-			template.hasTemplate = func(name string) bool { return lookup(name) != nil }
+			t = tt
 		}
+		t = t.Lookup(m.RootName)
+		if t == nil {
+			return fmt.Errorf("Could not find %q in %v", m.RootName, template.fileNames)
+		}
+		template.execute = t.Execute
+		template.executeTemplate = t.ExecuteTemplate
+		lookup := t.Lookup
+		template.hasTemplate = func(name string) bool { return lookup(name) != nil }
+	}
+	return nil
+}
+
+func (m *TemplateManager) loadText(dir string) error {
+
+	base := ttemp.Must(ttemp.New("_").Funcs(m.TextFuncs).Parse(`{{define "_"}}{{end}}`))
+	cache := make(map[string]*ttemp.Template)
+
+	for _, template := range m.textTemplates {
+		t := base
+		for i := len(template.fileNames) - 1; i >= 0; i-- {
+			key := strings.Join(template.fileNames[i:], "\n")
+			tt, ok := cache[key]
+			if !ok {
+				name := filepath.Join(dir, filepath.FromSlash(template.fileNames[i]))
+				var err error
+				tt, err = t.Clone()
+				if err != nil {
+					return err
+				}
+				tt, err = tt.ParseFiles(name)
+				if err != nil {
+					return err
+				}
+				cache[key] = tt
+			}
+			t = tt
+		}
+		t = t.Lookup(m.RootName)
+		if t == nil {
+			return fmt.Errorf("Could not find %q in %v", m.RootName, template.fileNames)
+		}
+		template.execute = t.Execute
+		template.executeTemplate = t.ExecuteTemplate
+		lookup := t.Lookup
+		template.hasTemplate = func(name string) bool { return lookup(name) != nil }
 	}
 	return nil
 }

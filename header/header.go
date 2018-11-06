@@ -21,48 +21,101 @@ import (
 	"time"
 )
 
-// Octet types from RFC 2616.
-var octetTypes [256]octetType
+// Token octets per RFC 2616.
+var isToken = [256]bool{
+	'!':  true,
+	'#':  true,
+	'$':  true,
+	'%':  true,
+	'&':  true,
+	'\'': true,
+	'*':  true,
+	'+':  true,
+	'-':  true,
+	'.':  true,
+	'0':  true,
+	'1':  true,
+	'2':  true,
+	'3':  true,
+	'4':  true,
+	'5':  true,
+	'6':  true,
+	'7':  true,
+	'8':  true,
+	'9':  true,
+	'A':  true,
+	'B':  true,
+	'C':  true,
+	'D':  true,
+	'E':  true,
+	'F':  true,
+	'G':  true,
+	'H':  true,
+	'I':  true,
+	'J':  true,
+	'K':  true,
+	'L':  true,
+	'M':  true,
+	'N':  true,
+	'O':  true,
+	'P':  true,
+	'Q':  true,
+	'R':  true,
+	'S':  true,
+	'T':  true,
+	'U':  true,
+	'W':  true,
+	'V':  true,
+	'X':  true,
+	'Y':  true,
+	'Z':  true,
+	'^':  true,
+	'_':  true,
+	'`':  true,
+	'a':  true,
+	'b':  true,
+	'c':  true,
+	'd':  true,
+	'e':  true,
+	'f':  true,
+	'g':  true,
+	'h':  true,
+	'i':  true,
+	'j':  true,
+	'k':  true,
+	'l':  true,
+	'm':  true,
+	'n':  true,
+	'o':  true,
+	'p':  true,
+	'q':  true,
+	'r':  true,
+	's':  true,
+	't':  true,
+	'u':  true,
+	'v':  true,
+	'w':  true,
+	'x':  true,
+	'y':  true,
+	'z':  true,
+	'|':  true,
+	'~':  true,
+}
 
-type octetType byte
+func isSpace(b byte) bool {
+	return b == ' ' || b == '\t'
+}
 
-const (
-	isToken octetType = 1 << iota
-	isSpace
-)
-
-func init() {
-	// From RFC 2616
-	//
-	// OCTET      = <any 8-bit sequence of data>
-	// CHAR       = <any US-ASCII character (octets 0 - 127)>
-	// CTL        = <any US-ASCII control character (octets 0 - 31) and DEL (127)>
-	// CR         = <US-ASCII CR, carriage return (13)>
-	// LF         = <US-ASCII LF, linefeed (10)>
-	// SP         = <US-ASCII SP, space (32)>
-	// HT         = <US-ASCII HT, horizontal-tab (9)>
-	// <">        = <US-ASCII double-quote mark (34)>
-	// CRLF       = CR LF
-	// LWS        = [CRLF] 1*( SP | HT )
-	// TEXT       = <any OCTET except CTLs, but including LWS>
-	// separators = "(" | ")" | "<" | ">" | "@" | "," | ";" | ":" | "\" | <">
-	//              | "/" | "[" | "]" | "?" | "=" | "{" | "}" | SP | HT
-	// token      = 1*<any CHAR except CTLs or separators>
-	// qdtext     = <any TEXT except <">>
-
-	for c := 0; c < 256; c++ {
-		var t octetType
-		isCtl := c <= 31 || c == 127
-		isChar := 0 <= c && c <= 127
-		isSeparator := strings.IndexRune(" \t\"(),/:;<=>?@[]\\{}", rune(c)) >= 0
-		if strings.IndexRune(" \t\r\n", rune(c)) >= 0 {
-			t |= isSpace
+// skipSpace returns a slice of the string s with all leading RFC 2616 linear
+// whitespace removed.
+func skipSpace(s string) (rest string) {
+	i := 0
+	for ; i < len(s); i++ {
+		if !isSpace(s[i]) {
+			break
 		}
-		if isChar && !isCtl && !isSeparator {
-			t |= isToken
-		}
-		octetTypes[c] = t
 	}
+	return s[i:]
 }
 
 // Copy returns a shallow copy of the header.
@@ -117,7 +170,7 @@ func ParseList(header http.Header, key string) []string {
 			case b == '"':
 				quote = true
 				end = i + 1
-			case octetTypes[b]&isSpace != 0:
+			case isSpace(b):
 				if begin == end {
 					begin = i + 1
 					end = begin
@@ -210,20 +263,10 @@ loop:
 	return
 }
 
-func skipSpace(s string) (rest string) {
-	i := 0
-	for ; i < len(s); i++ {
-		if octetTypes[s[i]]&isSpace == 0 {
-			break
-		}
-	}
-	return s[i:]
-}
-
 func expectToken(s string) (token, rest string) {
 	i := 0
 	for ; i < len(s); i++ {
-		if octetTypes[s[i]]&isToken == 0 {
+		if !isToken[s[i]] {
 			break
 		}
 	}
@@ -234,7 +277,7 @@ func expectTokenSlash(s string) (token, rest string) {
 	i := 0
 	for ; i < len(s); i++ {
 		b := s[i]
-		if (octetTypes[b]&isToken == 0) && b != '/' {
+		if !isToken[b] && b != '/' {
 			break
 		}
 	}

@@ -34,9 +34,9 @@ var encodeDecodeValueTests = []struct {
 	{
 		values: []interface{}{nil},
 	},
-    {
-        values: []interface{}{[]string{"Hello!", "World!"}},
-    },
+	{
+		values: []interface{}{[]string{"Hello!", "World!"}},
+	},
 }
 
 func TestEncodeDecodeValue(t *testing.T) {
