@@ -1,3 +1,7 @@
+// Copyright 2018 Gary Burd. All rights reserved.
+// Use of this source code is governed by a BSD-style
+// license that can be found in the LICENSE file.
+
 package sqlutil
 
 import (
@@ -8,31 +12,44 @@ import (
 	"sync"
 )
 
+// Rows is a data source for the scan methods in this package. The sql.Rows
+// type from the database/sql package satisfies this interface.
 type Rows interface {
 	Scan(...interface{}) error
 	Columns() ([]string, error)
 	Next() bool
 }
 
-type ScanContext struct {
-	MakeScanners map[reflect.Type]func(dst interface{}) sql.Scanner
+// Scanner scans database rows. An application should create a single scanner
+// for each set of options and reuse that Scanner. Scanners are thread-safe.
+type Scanner struct {
+	ValueScanner func(dst interface{}) sql.Scanner
 
 	cache sync.Map
 }
 
 type field struct {
-	name        string
-	typ         reflect.Type
-	index       []int
-	makeScanner func(interface{}) sql.Scanner
+	name            string
+	typ             reflect.Type
+	index           []int
+	useValueScanner bool
 }
 
-func (sc *ScanContext) fieldsForType(t reflect.Type) []*field {
+func (sc *Scanner) fieldsForType(t reflect.Type) []*field {
 	fields := sc.collectFields(nil, t, make(map[reflect.Type]bool), make(map[string]int), nil)
 	return fields
 }
 
-func (sc *ScanContext) collectFields(fields []*field, t reflect.Type, visited map[reflect.Type]bool, depth map[string]int, index []int) []*field {
+func (sc *Scanner) useValueScannerForType(t reflect.Type) bool {
+	if sc.ValueScanner == nil {
+		return false
+	}
+	// Probe with a dummy value.
+	v := reflect.New(t)
+	return sc.ValueScanner(v.Interface()) != nil
+}
+
+func (sc *Scanner) collectFields(fields []*field, t reflect.Type, visited map[reflect.Type]bool, depth map[string]int, index []int) []*field {
 	// Break recursion.
 	if visited[t] {
 		return fields
@@ -98,10 +115,10 @@ func (sc *ScanContext) collectFields(fields []*field, t reflect.Type, visited ma
 		depth[name] = len(index)
 
 		f := &field{
-			name:        name,
-			index:       make([]int, len(index)+1),
-			typ:         sf.Type,
-			makeScanner: sc.MakeScanners[sf.Type],
+			name:            name,
+			index:           make([]int, len(index)+1),
+			typ:             sf.Type,
+			useValueScanner: sc.useValueScannerForType(sf.Type),
 		}
 		copy(f.index, index)
 		f.index[len(index)] = i
@@ -119,7 +136,7 @@ func (e *badFieldError) Error() string {
 	return fmt.Sprintf("could not find field for column %s in type %s", e.c, e.t)
 }
 
-func (sc *ScanContext) valueFns(rows Rows, t reflect.Type) ([]func(v reflect.Value) interface{}, error) {
+func (sc *Scanner) valueFns(rows Rows, t reflect.Type) ([]func(v reflect.Value) interface{}, error) {
 	columns, err := rows.Columns()
 	if err != nil {
 		return nil, err
@@ -148,8 +165,8 @@ func (sc *ScanContext) valueFns(rows Rows, t reflect.Type) ([]func(v reflect.Val
 		}
 		var fn func(v reflect.Value) interface{}
 		index := f.index
-		if makeScanner := f.makeScanner; makeScanner != nil {
-			fn = func(v reflect.Value) interface{} { return makeScanner(v.FieldByIndex(index).Addr().Interface()) }
+		if f.useValueScanner {
+			fn = func(v reflect.Value) interface{} { return sc.ValueScanner(v.FieldByIndex(index).Addr().Interface()) }
 		} else {
 			fn = func(v reflect.Value) interface{} { return v.FieldByIndex(index).Addr().Interface() }
 		}
@@ -159,7 +176,9 @@ func (sc *ScanContext) valueFns(rows Rows, t reflect.Type) ([]func(v reflect.Val
 	return fns, nil
 }
 
-func (sc *ScanContext) ScanRows(rows Rows, dest interface{}) error {
+// ScanRows scans multiple rows to the slice pointed to by test. The slice
+// elements must be a struct or a pointer to a struct.
+func (sc *Scanner) ScanRows(rows Rows, dest interface{}) error {
 	destv := reflect.ValueOf(dest).Elem()
 	elemt := destv.Type().Elem()
 	isPtr := elemt.Kind() == reflect.Ptr
@@ -191,7 +210,8 @@ func (sc *ScanContext) ScanRows(rows Rows, dest interface{}) error {
 	return nil
 }
 
-func (sc *ScanContext) ScanRow(rows Rows, dest interface{}) error {
+// ScanRow scans one row to dest, a pointer to a struct.
+func (sc *Scanner) ScanRow(rows Rows, dest interface{}) error {
 	if !rows.Next() {
 		return sql.ErrNoRows
 	}

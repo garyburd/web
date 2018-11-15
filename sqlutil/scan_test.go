@@ -1,3 +1,7 @@
+// Copyright 2018 Gary Burd. All rights reserved.
+// Use of this source code is governed by a BSD-style
+// license that can be found in the LICENSE file.
+
 package sqlutil
 
 import (
@@ -51,12 +55,12 @@ func (i *intValue) Scan(v interface{}) error {
 	return err
 }
 
-func makeScanner(v interface{}) sql.Scanner {
+func valueScanner(v interface{}) sql.Scanner {
 	switch v := v.(type) {
 	case *int:
 		return (*intValue)(v)
 	default:
-		panic("unknown type")
+		return nil
 	}
 }
 
@@ -114,9 +118,7 @@ var scanRowTests = []struct {
 }
 
 func TestScanRow(t *testing.T) {
-	sc := ScanContext{MakeScanners: map[reflect.Type]func(interface{}) sql.Scanner{
-		reflect.TypeOf(int(0)): makeScanner,
-	}}
+	sc := Scanner{ValueScanner: valueScanner}
 	for _, tt := range scanRowTests {
 		t.Run(fmt.Sprintf("%s:%s", tt.rows.columns, tt.rows.values), func(t *testing.T) {
 			rows := *tt.rows
@@ -134,7 +136,7 @@ func TestScanRow(t *testing.T) {
 }
 
 func TestScanRows(t *testing.T) {
-	sc := ScanContext{}
+	sc := Scanner{}
 	rows := testRows{2, "Field1 Alias2", "value1 value2"}
 
 	var dest []testType
@@ -153,7 +155,7 @@ func TestScanRows(t *testing.T) {
 }
 
 func TestScanRowsPtr(t *testing.T) {
-	sc := ScanContext{}
+	sc := Scanner{}
 	rows := testRows{2, "Field1 Alias2", "value1 value2"}
 
 	var dest []*testType
