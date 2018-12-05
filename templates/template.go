@@ -55,7 +55,7 @@ func (t *Template) WriteResponse(w http.ResponseWriter, r *http.Request, statusC
 	return nil
 }
 
-type TemplateManager struct {
+type Manager struct {
 	TextFuncs     map[string]interface{}
 	HTMLFuncs     map[string]interface{}
 	RootName      string // default is "ROOT"
@@ -67,7 +67,7 @@ type TemplateManager struct {
 // Order the files from most specific to this template to most common. The
 // files in common suffixes across templates are parsed once. File names are
 // relative to the directory name passed to Load.
-func (m *TemplateManager) NewHTML(fileNames ...string) *Template {
+func (m *Manager) NewHTML(fileNames ...string) *Template {
 	t := &Template{fileNames: fileNames, contentType: mime.TypeByExtension(path.Ext(fileNames[0]))}
 	m.htmlTemplates = append(m.htmlTemplates, t)
 	return t
@@ -77,14 +77,14 @@ func (m *TemplateManager) NewHTML(fileNames ...string) *Template {
 // from most specific to this template to most common. The files in common
 // suffixes across templates are parsed once. File names are relative to the
 // directory name passed to Load.
-func (m *TemplateManager) NewText(fileNames ...string) *Template {
+func (m *Manager) NewText(fileNames ...string) *Template {
 	t := &Template{fileNames: fileNames, contentType: mime.TypeByExtension(path.Ext(fileNames[0]))}
 	m.textTemplates = append(m.textTemplates, t)
 	return t
 }
 
 // Load loads the templates from the specified directory.
-func (m *TemplateManager) Load(dir string) error {
+func (m *Manager) Load(dir string) error {
 	if m.RootName == "" {
 		m.RootName = "ROOT"
 	}
@@ -94,7 +94,7 @@ func (m *TemplateManager) Load(dir string) error {
 	return m.loadText(dir)
 }
 
-func (m *TemplateManager) loadHTML(dir string) error {
+func (m *Manager) loadHTML(dir string) error {
 
 	base := htemp.Must(htemp.New("_").Funcs(m.HTMLFuncs).Parse(`{{define "_"}}{{end}}`))
 	cache := make(map[string]*htemp.Template)
@@ -131,7 +131,7 @@ func (m *TemplateManager) loadHTML(dir string) error {
 	return nil
 }
 
-func (m *TemplateManager) loadText(dir string) error {
+func (m *Manager) loadText(dir string) error {
 
 	base := ttemp.Must(ttemp.New("_").Funcs(m.TextFuncs).Parse(`{{define "_"}}{{end}}`))
 	cache := make(map[string]*ttemp.Template)

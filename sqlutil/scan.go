@@ -23,6 +23,8 @@ type Rows interface {
 // Scanner scans database rows. An application should create a single scanner
 // for each set of options and reuse that Scanner. Scanners are thread-safe.
 type Scanner struct {
+	// ValueScanner returns the scanner to use for value pointed to by dst.
+	// Return nil to use the built-in sql/db scanner.
 	ValueScanner func(dst interface{}) sql.Scanner
 
 	cache sync.Map
@@ -146,7 +148,7 @@ func (sc *Scanner) valueFns(rows Rows, t reflect.Type) ([]func(v reflect.Value) 
 		c string
 	}{
 		t,
-		strings.Join(columns, "\x00"),
+		strings.Join(columns, ","),
 	}
 	if v, ok := sc.cache.Load(key); ok {
 		return v.([]func(v reflect.Value) interface{}), nil
@@ -176,11 +178,11 @@ func (sc *Scanner) valueFns(rows Rows, t reflect.Type) ([]func(v reflect.Value) 
 	return fns, nil
 }
 
-// ScanRows scans multiple rows to the slice pointed to by test. The slice
+// ScanRows scans multiple rows to the slice pointed to by dst. The slice
 // elements must be a struct or a pointer to a struct.
-func (sc *Scanner) ScanRows(rows Rows, dest interface{}) error {
-	destv := reflect.ValueOf(dest).Elem()
-	elemt := destv.Type().Elem()
+func (sc *Scanner) ScanRows(rows Rows, dst interface{}) error {
+	dstv := reflect.ValueOf(dst).Elem()
+	elemt := dstv.Type().Elem()
 	isPtr := elemt.Kind() == reflect.Ptr
 	if isPtr {
 		elemt = elemt.Elem()
@@ -202,27 +204,27 @@ func (sc *Scanner) ScanRows(rows Rows, dest interface{}) error {
 		}
 
 		if isPtr {
-			destv.Set(reflect.Append(destv, rowp))
+			dstv.Set(reflect.Append(dstv, rowp))
 		} else {
-			destv.Set(reflect.Append(destv, rowv))
+			dstv.Set(reflect.Append(dstv, rowv))
 		}
 	}
 	return nil
 }
 
-// ScanRow scans one row to dest, a pointer to a struct.
-func (sc *Scanner) ScanRow(rows Rows, dest interface{}) error {
+// ScanRow scans one row to dst, a pointer to a struct.
+func (sc *Scanner) ScanRow(rows Rows, dst interface{}) error {
 	if !rows.Next() {
 		return sql.ErrNoRows
 	}
-	destv := reflect.ValueOf(dest).Elem()
-	fns, err := sc.valueFns(rows, destv.Type())
+	dstv := reflect.ValueOf(dst).Elem()
+	fns, err := sc.valueFns(rows, dstv.Type())
 	if err != nil {
 		return err
 	}
 	scan := make([]interface{}, len(fns))
 	for i, fn := range fns {
-		scan[i] = fn(destv)
+		scan[i] = fn(dstv)
 	}
 	return rows.Scan(scan...)
 }
