@@ -262,12 +262,28 @@ func encodeValues(buf []byte, values []interface{}) ([]byte, error) {
 			buf = encodeBytes(buf, v)
 		case int:
 			buf = strconv.AppendInt(buf, int64(v), 36)
+		case int64:
+			buf = strconv.AppendInt(buf, v, 36)
 		case []string:
 			for j, v := range v {
 				if j != 0 {
 					buf = append(buf, '!')
 				}
 				buf = encodeBytes(buf, v)
+			}
+		case []int:
+			for j, v := range v {
+				if j != 0 {
+					buf = append(buf, '!')
+				}
+				buf = strconv.AppendInt(buf, int64(v), 36)
+			}
+		case []int64:
+			for j, v := range v {
+				if j != 0 {
+					buf = append(buf, '!')
+				}
+				buf = strconv.AppendInt(buf, v, 36)
 			}
 		default:
 			return nil, fmt.Errorf("cookie: value type %s not supported", reflect.TypeOf(v))
@@ -290,11 +306,17 @@ func decodeValues(s string, values []interface{}) error {
 				return err
 			}
 		case *int:
-			i64, err := strconv.ParseInt(p, 36, 0)
+			n, err := strconv.ParseInt(p, 36, 0)
 			if err != nil {
 				return err
 			}
-			*v = int(i64)
+			*v = int(n)
+		case *int64:
+			n, err := strconv.ParseInt(p, 36, 64)
+			if err != nil {
+				return err
+			}
+			*v = n
 		case *[]string:
 			for _, q := range strings.Split(p, "!") {
 				r, err := url.QueryUnescape(q)
@@ -302,6 +324,22 @@ func decodeValues(s string, values []interface{}) error {
 					return err
 				}
 				*v = append(*v, r)
+			}
+		case *[]int:
+			for _, q := range strings.Split(p, "!") {
+				n, err := strconv.ParseInt(q, 36, 0)
+				if err != nil {
+					return err
+				}
+				*v = append(*v, int(n))
+			}
+		case *[]int64:
+			for _, q := range strings.Split(p, "!") {
+				n, err := strconv.ParseInt(q, 36, 64)
+				if err != nil {
+					return err
+				}
+				*v = append(*v, n)
 			}
 		default:
 			return fmt.Errorf("cookie: value type %s not supported", reflect.TypeOf(v))

@@ -17,7 +17,7 @@ var encodeDecodeValueTests = []struct {
 	values []interface{}
 }{
 	{
-		values: []interface{}{1},
+		values: []interface{}{-2147483648, -1, 0, 1, 2147483647},
 	},
 	{
 		values: []interface{}{1, nil, 100},
@@ -36,6 +36,12 @@ var encodeDecodeValueTests = []struct {
 	},
 	{
 		values: []interface{}{[]string{"Hello!", "World!"}},
+	},
+	{
+		values: []interface{}{int64(-9223372036854775808), int64(-1), int64(0), int64(1), int64(9223372036854775807)},
+	},
+	{
+		values: []interface{}{[]int64{-9223372036854775808, -1, 0, 1, 9223372036854775807}},
 	},
 }
 
