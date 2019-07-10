@@ -194,6 +194,7 @@ func (m *Manager) loadHTML(template *Template) {
 			}
 			tt, template.err = tt.ParseFiles(name)
 			if template.err != nil {
+				template.err = fmt.Errorf("%s: %v", name, template.err)
 				return
 			}
 			m.html.cache[key] = tt
@@ -227,6 +228,7 @@ func (m *Manager) loadText(template *Template) {
 			}
 			tt, template.err = tt.ParseFiles(name)
 			if template.err != nil {
+				template.err = fmt.Errorf("%s: %v", name, template.err)
 				return
 			}
 			m.text.cache[key] = tt
